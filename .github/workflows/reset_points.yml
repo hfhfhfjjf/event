@@ -1,0 +1,28 @@
+name: Reset Winter Points to Zero
+
+# Ye action tabhi chalega jab tum isay manual trigger karoge GitHub Actions tab se
+on:
+  workflow_dispatch: 
+
+jobs:
+  update-database:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Firebase Admin
+        run: npm install firebase-admin
+
+      - name: Create Service Account Key File
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > serviceAccountKey.json
+
+      - name: Run Reset Script
+        run: node updatePoints.js
