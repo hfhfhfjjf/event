@@ -11,7 +11,7 @@ admin.initializeApp({
 const db = admin.database();
 // DHYAN DEIN: Agar users root level par hain toh db.ref("/") use karo. 
 // Agar kisi child node mein hain (e.g. "Users") toh db.ref("Users") likho.
-const usersRef = db.ref("Users"); 
+const usersRef = db.ref("users"); 
 
 async function resetWinterPoints() {
   console.log("GitHub Action: Users ka data fetch ho raha hai...");
