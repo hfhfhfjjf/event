@@ -1,6 +1,4 @@
 const admin = require("firebase-admin");
-
-// GitHub Action run time par ye file generate karega
 const serviceAccount = require("./serviceAccountKey.json");
 
 admin.initializeApp({
@@ -9,47 +7,62 @@ admin.initializeApp({
 });
 
 const db = admin.database();
-// DHYAN DEIN: Agar users root level par hain toh db.ref("/") use karo. 
-// Agar kisi child node mein hain (e.g. "Users") toh db.ref("Users") likho.
-const usersRef = db.ref("users"); 
+const usersRef = db.ref("users");
 
-async function resetWinterPoints() {
-  console.log("GitHub Action: Users ka data fetch ho raha hai...");
+// Email username ko asterisks se mask karne ka function
+function maskEmail(email) {
+    if (!email) return "N/A";
+    const parts = email.split("@");
+    if (parts.length !== 2) return email;
+    return `***@${parts[1]}`;
+}
 
+async function getTop20WinterPointsUsers() {
+  console.log("GitHub Action: Top 20 Fortune Fest winners fetch ho rahe hain...");
+  
   try {
-    const snapshot = await usersRef.once("value");
+    // Firebase se sirf top 20 highest winterPoints wale users fetch karein
+    const snapshot = await usersRef
+        .orderByChild("winterPoints")
+        .limitToLast(20)
+        .once("value");
+
     if (!snapshot.exists()) {
       console.log("Koi users nahi mile.");
       return;
     }
 
-    const uids = [];
+    const topUsers = [];
+    
     snapshot.forEach((child) => {
-      uids.push(child.key);
+      const data = child.val();
+      topUsers.push({
+        uid: child.key,
+        winterPoints: data.winterPoints || 0,
+        email: maskEmail(data.email)
+      });
     });
 
-    const totalUsers = uids.length;
-    console.log(`Total ${totalUsers} users mile. Update start...`);
+    // Firebase data ko ascending (chote se bada) order mein return karta hai.
+    // Highest points top par dikhane ke liye array ko reverse karna zaroori hai.
+    topUsers.reverse();
 
-    const CHUNK_SIZE = 5000; 
-    let batchUpdate = {};
-    
-    for (let i = 0; i < totalUsers; i++) {
-      batchUpdate[`${uids[i]}/winterPoints`] = 0;
+    console.log("\n==================================================");
+    console.log("🏆 TOP 20 FORTUNE FEST (WINTER POINTS) WINNERS 🏆");
+    console.log("==================================================\n");
 
-      if ((i + 1) % CHUNK_SIZE === 0 || i === totalUsers - 1) {
-        await usersRef.update(batchUpdate);
-        console.log(`[+] ${i + 1} / ${totalUsers} users update ho gaye...`);
-        batchUpdate = {}; 
-      }
-    }
-    console.log("✅ Sab users ke winterPoints zero ho gaye!");
+    topUsers.forEach((user, index) => {
+      console.log(`#${index + 1} | Points: ${user.winterPoints.toString().padEnd(8)} | Email: ${user.email.padEnd(20)} | UID: ${user.uid}`);
+    });
+
+    console.log("\n✅ Data successfully fetched!");
+
   } catch (error) {
     console.error("❌ Error:", error);
-    process.exit(1); // Action fail kar dega agar error aaya
+    process.exit(1); 
   } finally {
     process.exit(0);
   }
 }
 
-resetWinterPoints();
+getTop20WinterPointsUsers();
