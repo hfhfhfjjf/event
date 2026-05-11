@@ -9,7 +9,7 @@ admin.initializeApp({
 const db = admin.database();
 const usersRef = db.ref("users");
 
-// Email username ko asterisks se mask karne ka function
+// Email username ko asterisks se mask karne ka function (Strict format: ***@domain)
 function maskEmail(email) {
     if (!email) return "N/A";
     const parts = email.split("@");
@@ -17,13 +17,13 @@ function maskEmail(email) {
     return `***@${parts[1]}`;
 }
 
-async function getTop20WinterPointsUsers() {
-  console.log("GitHub Action: Top 20 Fortune Fest winners fetch ho rahe hain...");
+async function getTop20BalanceUsers() {
+  console.log("GitHub Action: Top 20 highest balance wale users fetch ho rahe hain...");
   
   try {
-    // Firebase se sirf top 20 highest winterPoints wale users fetch karein
+    // Firebase se sirf top 20 highest balance wale users fetch karein
     const snapshot = await usersRef
-        .orderByChild("winterPoints")
+        .orderByChild("balance")
         .limitToLast(20)
         .once("value");
 
@@ -38,21 +38,23 @@ async function getTop20WinterPointsUsers() {
       const data = child.val();
       topUsers.push({
         uid: child.key,
-        winterPoints: data.winterPoints || 0,
+        balance: data.balance || 0,
         email: maskEmail(data.email)
       });
     });
 
     // Firebase data ko ascending (chote se bada) order mein return karta hai.
-    // Highest points top par dikhane ke liye array ko reverse karna zaroori hai.
+    // Highest balance top par dikhane ke liye array ko reverse karna zaroori hai.
     topUsers.reverse();
 
     console.log("\n==================================================");
-    console.log("🏆 TOP 20 FORTUNE FEST (WINTER POINTS) WINNERS 🏆");
+    console.log("🏆 TOP 20 HIGHEST BALANCE USERS 🏆");
     console.log("==================================================\n");
 
     topUsers.forEach((user, index) => {
-      console.log(`#${index + 1} | Points: ${user.winterPoints.toString().padEnd(8)} | Email: ${user.email.padEnd(20)} | UID: ${user.uid}`);
+      // Balance ko thoda clean format karne ke liye (maslan 2 decimal places)
+      const formattedBalance = Number(user.balance).toFixed(2);
+      console.log(`#${index + 1} | Balance: ${formattedBalance.padEnd(12)} | Email: ${user.email.padEnd(20)} | UID: ${user.uid}`);
     });
 
     console.log("\n✅ Data successfully fetched!");
@@ -65,4 +67,4 @@ async function getTop20WinterPointsUsers() {
   }
 }
 
-getTop20WinterPointsUsers();
+getTop20BalanceUsers();
