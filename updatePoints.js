@@ -7,9 +7,9 @@ admin.initializeApp({
 });
 
 const db = admin.database();
-const usersRef = db.ref("users");
+const usersRef = db.ref("users"); // Ensure apke data ka root node 'users' hi hai
 
-// Email username ko asterisks se mask karne ka function (Strict format: ***@domain)
+// Email username ko asterisks se mask karne ka function (agar zaroorat ho)
 function maskEmail(email) {
     if (!email) return "N/A";
     const parts = email.split("@");
@@ -18,7 +18,7 @@ function maskEmail(email) {
 }
 
 async function getTop20BalanceUsers() {
-  console.log("GitHub Action: Top 20 highest balance wale users fetch ho rahe hain...");
+  console.log("Fetching top 20 highest balance users...");
   
   try {
     // Firebase se sirf top 20 highest balance wale users fetch karein
@@ -39,22 +39,32 @@ async function getTop20BalanceUsers() {
       topUsers.push({
         uid: child.key,
         balance: data.balance || 0,
-        email: maskEmail(data.email)
+        email: data.email || "N/A",
+        maskedEmail: maskEmail(data.email),
+        fullName: data.fullName || "N/A",      // Image se map kiya gaya
+        username: data.username || "N/A"       // Image se map kiya gaya
       });
     });
 
-    // Firebase data ko ascending (chote se bada) order mein return karta hai.
-    // Highest balance top par dikhane ke liye array ko reverse karna zaroori hai.
+    // Firebase data ko ascending order mein deta hai, isliye descending ke liye reverse karna zaroori hai
     topUsers.reverse();
 
-    console.log("\n==================================================");
+    console.log("\n=====================================================================================================");
     console.log("🏆 TOP 20 HIGHEST BALANCE USERS 🏆");
-    console.log("==================================================\n");
+    console.log("=====================================================================================================\n");
 
     topUsers.forEach((user, index) => {
-      // Balance ko thoda clean format karne ke liye (maslan 2 decimal places)
       const formattedBalance = Number(user.balance).toFixed(2);
-      console.log(`#${index + 1} | Balance: ${formattedBalance.padEnd(12)} | Email: ${user.email.padEnd(20)} | UID: ${user.uid}`);
+      
+      // Output ko beautifully align karne ke liye padEnd ka use kiya gaya hai
+      console.log(
+        `#${String(index + 1).padEnd(2)} | ` +
+        `Balance: ${formattedBalance.padEnd(8)} | ` +
+        `Name: ${user.fullName.padEnd(15)} | ` +
+        `Username: ${user.username.padEnd(12)} | ` +
+        `Email: ${user.email.padEnd(30)} | ` +
+        `UID: ${user.uid}`
+      );
     });
 
     console.log("\n✅ Data successfully fetched!");
