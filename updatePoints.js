@@ -7,74 +7,75 @@ admin.initializeApp({
 });
 
 const db = admin.database();
-const usersRef = db.ref("users"); // Ensure apke data ka root node 'users' hi hai
+const usersRef = db.ref("users"); 
 
-// Email username ko asterisks se mask karne ka function (agar zaroorat ho)
-function maskEmail(email) {
-    if (!email) return "N/A";
-    const parts = email.split("@");
-    if (parts.length !== 2) return email;
-    return `***@${parts[1]}`;
-}
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const PENALTY_AMOUNT = 100;
 
-async function getTop20BalanceUsers() {
-  console.log("Fetching top 20 highest balance users...");
+async function applySlashingMechanism() {
+  console.log("🔍 Checking for inactive miners to apply slashing...");
   
   try {
-    // Firebase se sirf top 20 highest balance wale users fetch karein
-    const snapshot = await usersRef
-        .orderByChild("balance")
-        .limitToLast(20)
-        .once("value");
+    const currentTime = Date.now(); 
+    const snapshot = await usersRef.once("value");
 
     if (!snapshot.exists()) {
-      console.log("Koi users nahi mile.");
+      console.log("❌ Koi users nahi mile.");
       return;
     }
 
-    const topUsers = [];
-    
+    const updates = {};
+    let slashedUsersCount = 0;
+    let totalSlashedAmount = 0; // Total slashed STRX track karne ke liye
+
     snapshot.forEach((child) => {
+      const uid = child.key;
       const data = child.val();
-      topUsers.push({
-        uid: child.key,
-        balance: data.balance || 0,
-        email: data.email || "N/A",
-        maskedEmail: maskEmail(data.email),
-        fullName: data.fullName || "N/A",      // Image se map kiya gaya
-        username: data.username || "N/A"       // Image se map kiya gaya
-      });
-    });
-
-    // Firebase data ko ascending order mein deta hai, isliye descending ke liye reverse karna zaroori hai
-    topUsers.reverse();
-
-    console.log("\n=====================================================================================================");
-    console.log("🏆 TOP 20 HIGHEST BALANCE USERS 🏆");
-    console.log("=====================================================================================================\n");
-
-    topUsers.forEach((user, index) => {
-      const formattedBalance = Number(user.balance).toFixed(2);
       
-      // Output ko beautifully align karne ke liye padEnd ka use kiya gaya hai
-      console.log(
-        `#${String(index + 1).padEnd(2)} | ` +
-        `Balance: ${formattedBalance.padEnd(8)} | ` +
-        `Name: ${user.fullName.padEnd(15)} | ` +
-        `Username: ${user.username.padEnd(12)} | ` +
-        `Email: ${user.email.padEnd(30)} | ` +
-        `UID: ${user.uid}`
-      );
+      const balance = data.balance || 0;
+      
+      const miningData = data.mining || {};
+      const lastUpdate = miningData.lastUpdate || 0;
+
+      if (lastUpdate > 0) {
+        const timeDifference = currentTime - lastUpdate;
+
+        if (timeDifference > ONE_WEEK_MS) {
+          
+          const newBalance = Math.max(0, balance - PENALTY_AMOUNT); 
+          
+          // Actual deducted amount calculate kar rahe hain (agar balance 100 se kam tha toh utna hi deduct hoga)
+          const actualDeducted = balance - newBalance; 
+          
+          if (actualDeducted > 0) {
+              updates[`${uid}/balance`] = newBalance;
+              slashedUsersCount++;
+              totalSlashedAmount += actualDeducted; // Total mein add kar rahe hain
+
+              console.log(`⚠️ Slashing -> UID: ${uid} | Old Balance: ${Number(balance).toFixed(2)} | New Balance: ${Number(newBalance).toFixed(2)} | Deducted: ${actualDeducted.toFixed(2)}`);
+          }
+        }
+      }
     });
 
-    console.log("\n✅ Data successfully fetched!");
+    if (slashedUsersCount > 0) {
+      console.log("\n⏳ Updating database...");
+      await usersRef.update(updates); 
+      
+      console.log("\n==================================================");
+      console.log(`✅ Slashing successfully applied to ${slashedUsersCount} users!`);
+      console.log(`🔥 Total STRX Slashed: ${totalSlashedAmount.toFixed(2)} STRX`);
+      console.log("==================================================\n");
+    } else {
+      console.log("\n✅ Koi bhi user 1 week se zyada inactive nahi hai. No slashing needed.");
+    }
 
   } catch (error) {
-    console.error("❌ Error:", error);
+    console.error("❌ Error applying slashing:", error);
     process.exit(1); 
   } finally {
     process.exit(0);
   }
 }
 
-getTop20BalanceUsers();
+applySlashingMechanism();
