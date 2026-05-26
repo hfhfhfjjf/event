@@ -7,74 +7,92 @@ admin.initializeApp({
 });
 
 const db = admin.database();
-const usersRef = db.ref("users"); // Ensure apke data ka root node 'users' hi hai
+const auth = admin.auth(); // Firebase Auth initialize kiya user disable karne ke liye
+const usersRef = db.ref("users");
 
-// Email username ko asterisks se mask karne ka function (agar zaroorat ho)
-function maskEmail(email) {
-    if (!email) return "N/A";
-    const parts = email.split("@");
-    if (parts.length !== 2) return email;
-    return `***@${parts[1]}`;
-}
-
-async function getTop20BalanceUsers() {
-  console.log("Fetching top 20 highest balance users...");
+async function cleanupSpamUsers() {
+  console.log("Scannning database for @guerrillamailblock.com accounts...\n");
   
   try {
-    // Firebase se sirf top 20 highest balance wale users fetch karein
-    const snapshot = await usersRef
-        .orderByChild("balance")
-        .limitToLast(20)
-        .once("value");
+    // Database se sab users fetch karein
+    const snapshot = await usersRef.once("value");
 
     if (!snapshot.exists()) {
-      console.log("Koi users nahi mile.");
+      console.log("Koi users nahi mile database main.");
       return;
     }
 
-    const topUsers = [];
+    const spamUsers = [];
     
+    // Check every user for the target email domain
     snapshot.forEach((child) => {
       const data = child.val();
-      topUsers.push({
-        uid: child.key,
-        balance: data.balance || 0,
-        email: data.email || "N/A",
-        maskedEmail: maskEmail(data.email),
-        fullName: data.fullName || "N/A",      // Image se map kiya gaya
-        username: data.username || "N/A"       // Image se map kiya gaya
-      });
+      const email = data.email ? data.email.toLowerCase() : "";
+      
+      if (email.endsWith("@guerrillamailblock.com")) {
+        spamUsers.push({
+          uid: child.key,
+          email: data.email,
+          balance: data.balance || 0
+        });
+      }
     });
 
-    // Firebase data ko ascending order mein deta hai, isliye descending ke liye reverse karna zaroori hai
-    topUsers.reverse();
+    if (spamUsers.length === 0) {
+      console.log("✅ Koi @guerrillamailblock.com wala account nahi mila. Database safe hai.");
+      process.exit(0);
+    }
 
-    console.log("\n=====================================================================================================");
-    console.log("🏆 TOP 20 HIGHEST BALANCE USERS 🏆");
-    console.log("=====================================================================================================\n");
+    console.log(`🚨 Total ${spamUsers.length} spam accounts found! Processing... \n`);
 
-    topUsers.forEach((user, index) => {
+    const processedUsers = [];
+
+    // Har spam user ko disable aur delete karna
+    for (const user of spamUsers) {
+      try {
+        // 1. Firebase Auth se disable karna
+        await auth.updateUser(user.uid, { disabled: true });
+        
+        // 2. Realtime Database se data delete karna
+        await usersRef.child(user.uid).remove();
+        
+        processedUsers.push(user);
+        console.log(`✅ Success: Disabled & Deleted -> ${user.email} (UID: ${user.uid})`);
+      } catch (err) {
+        console.error(`❌ Error with ${user.email} (UID: ${user.uid}):`, err.message);
+        // Agar Auth main user nahi milta par DB main hai, toh bhi DB se delete kar sakte hain
+        if (err.code === 'auth/user-not-found') {
+             console.log(`⚠️ User not in Auth. Deleting from DB anyway...`);
+             await usersRef.child(user.uid).remove();
+             processedUsers.push(user);
+        }
+      }
+    }
+
+    // Last main complete details print karna
+    console.log("\n===============================================================================================");
+    console.log(`🗑️  CLEANUP REPORT: Total ${processedUsers.length} Accounts Disabled & Deleted`);
+    console.log("===============================================================================================\n");
+
+    processedUsers.forEach((user, index) => {
       const formattedBalance = Number(user.balance).toFixed(2);
       
-      // Output ko beautifully align karne ke liye padEnd ka use kiya gaya hai
       console.log(
         `#${String(index + 1).padEnd(2)} | ` +
         `Balance: ${formattedBalance.padEnd(8)} | ` +
-        `Name: ${user.fullName.padEnd(15)} | ` +
-        `Username: ${user.username.padEnd(12)} | ` +
-        `Email: ${user.email.padEnd(30)} | ` +
+        `Email: ${user.email.padEnd(35)} | ` +
         `UID: ${user.uid}`
       );
     });
 
-    console.log("\n✅ Data successfully fetched!");
+    console.log("\n✅ Action completed successfully!");
 
   } catch (error) {
-    console.error("❌ Error:", error);
+    console.error("❌ Fatal Error:", error);
     process.exit(1); 
   } finally {
     process.exit(0);
   }
 }
 
-getTop20BalanceUsers();
+cleanupSpamUsers();
