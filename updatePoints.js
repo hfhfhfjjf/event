@@ -7,74 +7,120 @@ admin.initializeApp({
 });
 
 const db = admin.database();
-const usersRef = db.ref("users"); // Ensure apke data ka root node 'users' hi hai
+const auth = admin.auth(); 
+const usersRef = db.ref("users");
 
-// Email username ko asterisks se mask karne ka function (agar zaroorat ho)
-function maskEmail(email) {
-    if (!email) return "N/A";
-    const parts = email.split("@");
-    if (parts.length !== 2) return email;
-    return `***@${parts[1]}`;
+// Regex to detect Japanese, Korean, or Chinese characters
+const asianCharRegex = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/;
+
+// Function to check bot pattern
+function isBotPattern(data) {
+  const name = data.fullName || "";
+  const balance = Number(data.balance) || 0;
+  
+  // Condition 1: Name main Asian characters hain
+  const hasAsianChars = asianCharRegex.test(name);
+  
+  // Condition 2: Balance bohat zyada hai (aap isko adjust kar sakte hain)
+  const isHighBalance = balance > 100000; 
+
+  return hasAsianChars && isHighBalance;
 }
 
-async function getTop20BalanceUsers() {
-  console.log("Fetching top 20 highest balance users...");
+async function banBotAccounts() {
+  console.log("Scanning database for bot patterns (Asian names + High Balance)...\n");
   
   try {
-    // Firebase se sirf top 20 highest balance wale users fetch karein
-    const snapshot = await usersRef
-        .orderByChild("balance")
-        .limitToLast(20)
-        .once("value");
+    const snapshot = await usersRef.once("value");
 
     if (!snapshot.exists()) {
       console.log("Koi users nahi mile.");
       return;
     }
 
-    const topUsers = [];
+    const botUsers = [];
     
+    // Database scan karke bot pattern wale users filter out karna
     snapshot.forEach((child) => {
       const data = child.val();
-      topUsers.push({
-        uid: child.key,
-        balance: data.balance || 0,
-        email: data.email || "N/A",
-        maskedEmail: maskEmail(data.email),
-        fullName: data.fullName || "N/A",      // Image se map kiya gaya
-        username: data.username || "N/A"       // Image se map kiya gaya
-      });
+      
+      if (isBotPattern(data)) {
+        botUsers.push({
+          uid: child.key,
+          name: data.fullName || "N/A",
+          balance: data.balance || 0
+        });
+      }
     });
 
-    // Firebase data ko ascending order mein deta hai, isliye descending ke liye reverse karna zaroori hai
-    topUsers.reverse();
+    if (botUsers.length === 0) {
+      console.log("✅ Koi bot pattern wala account nahi mila.");
+      process.exit(0);
+    }
 
-    console.log("\n=====================================================================================================");
-    console.log("🏆 TOP 20 HIGHEST BALANCE USERS 🏆");
-    console.log("=====================================================================================================\n");
+    console.log(`🚨 Total ${botUsers.length} suspicious accounts found! Processing... \n`);
 
-    topUsers.forEach((user, index) => {
-      const formattedBalance = Number(user.balance).toFixed(2);
+    const processedUsers = [];
+
+    for (const user of botUsers) {
+      let creationTime = "Unknown";
       
-      // Output ko beautifully align karne ke liye padEnd ka use kiya gaya hai
+      try {
+        // 1. Firebase Auth se user ki details fetch karna (Creation Date ke liye)
+        const userRecord = await auth.getUser(user.uid);
+        
+        // Format the creation date nicely
+        const dateObj = new Date(userRecord.metadata.creationTime);
+        creationTime = dateObj.toISOString().split('T')[0]; // "YYYY-MM-DD" format
+
+        // 2. Auth se disable karna
+        await auth.updateUser(user.uid, { disabled: true });
+        
+        // 3. Realtime Database se data delete karna
+        await usersRef.child(user.uid).remove();
+        
+        processedUsers.push({ ...user, creationTime });
+        console.log(`✅ Banned & Deleted -> ${user.name} (UID: ${user.uid})`);
+        
+      } catch (err) {
+        console.error(`❌ Error with UID ${user.uid}:`, err.message);
+        
+        // Agar user Auth main nahi hai but DB main hai, tab bhi DB se delete kar dain
+        if (err.code === 'auth/user-not-found') {
+             console.log(`⚠️ User not in Auth. Deleting from DB anyway...`);
+             await usersRef.child(user.uid).remove();
+             processedUsers.push({ ...user, creationTime: "Not in Auth" });
+        }
+      }
+    }
+
+    // Final Report Print Karna
+    console.log("\n==========================================================================================================");
+    console.log(`🗑️  BOT CLEANUP REPORT: Total ${processedUsers.length} Accounts Banned & Deleted`);
+    console.log("==========================================================================================================\n");
+
+    processedUsers.forEach((user, index) => {
+      const formattedBalance = Number(user.balance).toFixed(2);
+      // Ensure name truncation agar bohot lamba ho to layout kharab na ho
+      const shortName = user.name.length > 15 ? user.name.substring(0, 15) + ".." : user.name;
+      
       console.log(
         `#${String(index + 1).padEnd(2)} | ` +
-        `Balance: ${formattedBalance.padEnd(8)} | ` +
-        `Name: ${user.fullName.padEnd(15)} | ` +
-        `Username: ${user.username.padEnd(12)} | ` +
-        `Email: ${user.email.padEnd(30)} | ` +
+        `Balance: ${formattedBalance.padEnd(10)} | ` +
+        `Name: ${shortName.padEnd(15)} | ` +
+        `Created: ${user.creationTime.padEnd(12)} | ` +
         `UID: ${user.uid}`
       );
     });
 
-    console.log("\n✅ Data successfully fetched!");
+    console.log("\n✅ Action completed successfully!");
 
   } catch (error) {
-    console.error("❌ Error:", error);
+    console.error("❌ Fatal Error:", error);
     process.exit(1); 
   } finally {
     process.exit(0);
   }
 }
 
-getTop20BalanceUsers();
+banBotAccounts();
