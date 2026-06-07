@@ -10,7 +10,7 @@ const db = admin.database();
 const usersRef = db.ref("users"); 
 
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-const PENALTY_AMOUNT = 100;
+const PENALTY_AMOUNT = 500;
 
 async function applySlashingMechanism() {
   console.log("🔍 Checking for inactive miners to apply slashing...");
