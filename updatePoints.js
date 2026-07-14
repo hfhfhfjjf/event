@@ -9,8 +9,8 @@ admin.initializeApp({
 const db = admin.database();
 const usersRef = db.ref("users"); 
 
-async function getTopWinterUsersOnly() {
-  console.log("🔍 Database se users ka data read kiya ja raha hai (No Slashing)...");
+async function getTopWinterUsersUnder55K() {
+  console.log("🔍 Database se users ka data read kiya ja raha hai (Max Limit: 55,000 Points)...");
   
   try {
     const snapshot = await usersRef.once("value");
@@ -21,16 +21,17 @@ async function getTopWinterUsersOnly() {
     }
 
     const winterUsers = [];
+    const MAX_POINTS_LIMIT = 55000; // Limit set ki hai
 
     snapshot.forEach((child) => {
       const uid = child.key;
       const data = child.val();
       
       const email = data.email || "No Email";
-      const winterPoints = data.winterPoints || 0; // winterPoints read kar rahe hain
+      const winterPoints = data.winterPoints || 0;
 
-      // Sirf un users ko add karein jinki winterPoints 0 se zyada hain
-      if (winterPoints > 0) {
+      // Sirf un users ko add karein jinke points 0 se zyada hain AUR 55,000 ya usse kam hain
+      if (winterPoints > 0 && winterPoints <= MAX_POINTS_LIMIT) {
         winterUsers.push({
           uid: uid,
           email: email,
@@ -39,8 +40,8 @@ async function getTopWinterUsersOnly() {
       }
     });
 
-    // Top 50 Winter Points Users Sort aur Display karna
-    console.log("🏆 Fetching Top 50 Users based on Winter Points...");
+    // Top 50 Users Sort aur Display karna
+    console.log(`🏆 Fetching Top 50 Users based on Winter Points (Limit: <= ${MAX_POINTS_LIMIT})...`);
     
     // Descending order mein sort karein (Sabse zyada points upar)
     winterUsers.sort((a, b) => b.winterPoints - a.winterPoints);
@@ -50,7 +51,7 @@ async function getTopWinterUsersOnly() {
 
     if (top50.length > 0) {
       console.log("\n=================================================================================");
-      console.log("❄️  TOP 50 WINTER POINTS LEADERBOARD ❄️");
+      console.log(`❄️  TOP 50 WINTER POINTS LEADERBOARD (<= 55,000 Points) ❄️`);
       console.log("=================================================================================");
       console.table(
         top50.map((user, index) => ({
@@ -62,7 +63,7 @@ async function getTopWinterUsersOnly() {
       );
       console.log("=================================================================================\n");
     } else {
-      console.log("❌ Winter Points wala koi user nahi mila.");
+      console.log("❌ 55K ya usse kam points wala koi user nahi mila.");
     }
 
   } catch (error) {
@@ -73,4 +74,4 @@ async function getTopWinterUsersOnly() {
   }
 }
 
-getTopWinterUsersOnly();
+getTopWinterUsersUnder55K();
