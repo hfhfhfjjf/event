@@ -11,6 +11,7 @@ const usersRef = db.ref("users");
 
 const ADDED_POINTS = 7 * 200; // 1400 Points per user
 const MAX_POINTS_LIMIT = 52500; // Leaderboard display limit
+const BATCH_SIZE = 5000; // Ek baar mein 5000 users update honge
 
 async function addPointsAndGetTop50() {
   console.log(`⏳ Har user ke winterPoints mein ${ADDED_POINTS} points add kiye ja rahe hain...`);
@@ -25,7 +26,7 @@ async function addPointsAndGetTop50() {
 
     const updates = {};
     const winterUsers = [];
-    let updatedUsersCount = 0;
+    let totalUsersCount = 0;
 
     snapshot.forEach((child) => {
       const uid = child.key;
@@ -34,13 +35,14 @@ async function addPointsAndGetTop50() {
       const email = data.email || "No Email";
       const currentWinterPoints = data.winterPoints || 0;
 
-      // 1. Naye points calculate karna aur database update map mein dalna
+      // Naye points calculate karna
       const newWinterPoints = currentWinterPoints + ADDED_POINTS;
+      
+      // Updates object mein path aur value set karna
       updates[`${uid}/winterPoints`] = newWinterPoints;
-      updatedUsersCount++;
+      totalUsersCount++;
 
-      // 2. Local array mein naye points ke sath push karna leaderboard check ke liye
-      // (Sirf wahi users filter honge jinke naye points 52,500 ya usse kam hain)
+      // Local array mein filter ke sath push karna leaderboard ke liye
       if (newWinterPoints <= MAX_POINTS_LIMIT) {
         winterUsers.push({
           uid: uid,
@@ -50,14 +52,29 @@ async function addPointsAndGetTop50() {
       }
     });
 
-    // Database mein points update apply karna
-    if (updatedUsersCount > 0) {
-      console.log(`💾 Database update kiya ja raha hai (${updatedUsersCount} users ke points add ho rahe hain)...`);
-      await usersRef.update(updates);
-      console.log(`✅ Success! Har user ke winterPoints mein ${ADDED_POINTS} points add ho gaye hain.\n`);
+    console.log(`📋 Total ${totalUsersCount} users mile. Chunks mein update start ho raha hai...`);
+
+    // 1. Chunks/Batches mein Database update apply karna
+    const updateKeys = Object.keys(updates);
+    const totalBatches = Math.ceil(updateKeys.length / BATCH_SIZE);
+
+    for (let i = 0; i < totalBatches; i++) {
+      const batchUpdates = {};
+      const start = i * BATCH_SIZE;
+      const end = Math.min(start + BATCH_SIZE, updateKeys.length);
+
+      for (let j = start; j < end; j++) {
+        const key = updateKeys[j];
+        batchUpdates[key] = updates[key];
+      }
+
+      console.log(`💾 Updating Batch ${i + 1}/${totalBatches} (Users: ${start + 1} to ${end})...`);
+      await usersRef.update(batchUpdates);
     }
 
-    // 3. Top 50 Users Sort aur Display karna (Maximum 52,500 Limit)
+    console.log(`\n✅ Success! Sabhi ${totalUsersCount} users ke winterPoints mein ${ADDED_POINTS} points add ho gaye hain.\n`);
+
+    // 2. Top 50 Users Sort aur Display karna
     console.log(`🏆 Fetching Top 50 Users based on Winter Points (Limit: <= ${MAX_POINTS_LIMIT})...`);
     
     // Descending order mein sort karein (Sabse zyada points upar)
